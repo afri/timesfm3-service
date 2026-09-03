@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: timesfm3-service:test
+          load: true
+
+      - name: Run unit and API tests inside container
+        run: |
+          docker run --rm \
+            -e MOCK_MODE=true \
+            timesfm3-service:test \
+            pytest -v tests/
+
+      - name: Verify container healthcheck
+        run: |
+          docker run -d --name timesfm-test -p 8000:8000 -e MOCK_MODE=true timesfm3-service:test
+          sleep 5
+          curl -f http://localhost:8000/health
+          docker stop timesfm-test

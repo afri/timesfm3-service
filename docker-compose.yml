@@ -1,0 +1,28 @@
+services:
+  timesfm-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: timesfm3-service:latest
+    container_name: timesfm3-service
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_ID=google/timesfm-3.0-pytorch
+      - DEVICE=auto
+      - LAZY_LOAD=false
+      - MOCK_MODE=false
+      - HF_HOME=/app/cache
+    volumes:
+      - hf_cache:/app/cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  hf_cache:
+    name: timesfm3_model_cache

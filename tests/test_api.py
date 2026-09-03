@@ -1,0 +1,98 @@
+import pytest
+from fastapi.testclient import TestClient
+
+from app.config import settings
+from app.main import app
+
+# Ensure mock mode during test runs
+settings.MOCK_MODE = True
+
+client = TestClient(app)
+
+
+def test_health_endpoint():
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert data["model_loaded"] is True
+    assert "device" in data
+    assert "version" in data
+
+
+def test_healthz_endpoint():
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+
+
+def test_info_endpoint():
+    response = client.get("/v1/info")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["model_id"] == settings.MODEL_ID
+    assert data["max_horizon"] == settings.MAX_HORIZON
+    assert data["mock_mode"] is True
+
+
+def test_forecast_univariate_single_series():
+    payload = {
+        "series": [10.0, 11.0, 12.5, 13.0, 14.2, 15.0, 16.5, 17.0],
+        "horizon": 10,
+    }
+    response = client.post("/v1/forecast", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert "point_forecast" in data
+    assert len(data["point_forecast"]) == 10
+    assert data["horizon"] == 10
+    assert data["model_id"] == settings.MODEL_ID
+    assert data["inference_time_ms"] >= 0
+
+
+def test_forecast_batch_series():
+    payload = {
+        "series": [
+            [1.0, 2.0, 3.0, 4.0, 5.0],
+            [10.0, 20.0, 30.0, 40.0, 50.0],
+        ],
+        "horizon": 5,
+        "quantiles": [0.1, 0.5, 0.9],
+    }
+    response = client.post("/v1/forecast", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["point_forecast"]) == 2
+    assert len(data["point_forecast"][0]) == 5
+    assert len(data["point_forecast"][1]) == 5
+    assert data["quantiles"] is not None
+
+
+def test_forecast_default_horizon():
+    payload = {
+        "series": [10.0, 20.0, 30.0, 40.0, 50.0],
+    }
+    response = client.post("/forecast", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["point_forecast"]) == settings.DEFAULT_HORIZON
+
+
+def test_forecast_empty_series_validation():
+    payload = {
+        "series": [],
+        "horizon": 12,
+    }
+    response = client.post("/v1/forecast", json=payload)
+    assert response.status_code == 422
+
+
+def test_forecast_exceeds_max_horizon():
+    payload = {
+        "series": [1.0, 2.0, 3.0],
+        "horizon": settings.MAX_HORIZON + 100,
+    }
+    response = client.post("/v1/forecast", json=payload)
+    assert response.status_code == 400
+    assert "exceeds max allowed horizon" in response.json()["detail"]
