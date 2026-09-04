@@ -25,7 +25,6 @@ def forecast(request: ForecastRequest) -> ForecastResponse:
         point, quantiles, elapsed_ms = model_manager.forecast(
             series=request.series,
             horizon=target_horizon,
-            frequency=request.frequency,
             quantiles=request.quantiles,
             past_covariates=request.past_covariates,
             future_covariates=request.future_covariates,

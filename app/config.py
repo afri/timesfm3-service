@@ -16,9 +16,7 @@ class Settings(BaseSettings):
 
     # Model settings
     MODEL_ID: str = "google/timesfm-3.0-pytorch"
-    FALLBACK_MODEL_ID: str = "google/timesfm-2.5-200m-pytorch"
     DEVICE: str = "auto"  # "auto", "cpu", "cuda", "mps"
-    TORCH_DTYPE: str = "float32"
 
     # Context and horizon constraints
     MAX_CONTEXT: int = 1024

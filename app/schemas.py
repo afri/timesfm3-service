@@ -19,10 +19,6 @@ class ForecastRequest(BaseModel):
         le=2048,
         description="Forecast horizon (number of future steps to predict). Defaults to server default.",
     )
-    frequency: Optional[Union[int, str]] = Field(
-        default=0,
-        description="Frequency indicator: 0 for high-frequency/unspecified, 1 for daily, 2 for weekly, etc.",
-    )
     quantiles: Optional[List[float]] = Field(
         default=None,
         description="Optional specific quantiles to return (e.g. [0.1, 0.5, 0.9]).",

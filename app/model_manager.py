@@ -125,7 +125,6 @@ class TimesFMModelManager:
         self,
         series: Union[List[float], List[List[float]], List[List[List[float]]]],
         horizon: Optional[int] = None,
-        frequency: Optional[Union[int, str]] = 0,
         quantiles: Optional[List[float]] = None,
         past_covariates: Optional[Dict[str, Any]] = None,
         future_covariates: Optional[Dict[str, Any]] = None,
@@ -148,7 +147,6 @@ class TimesFMModelManager:
                 point_res, quantiles_res = self._run_model_inference(
                     series=series,
                     horizon=h,
-                    frequency=frequency,
                     quantiles=quantiles,
                     past_covariates=past_covariates,
                     future_covariates=future_covariates,
@@ -163,7 +161,6 @@ class TimesFMModelManager:
         self,
         series: Any,
         horizon: int,
-        frequency: Any,
         quantiles: Optional[List[float]],
         past_covariates: Optional[Dict[str, Any]],
         future_covariates: Optional[Dict[str, Any]],

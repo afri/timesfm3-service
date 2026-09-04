@@ -6,7 +6,6 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     HF_HOME=/app/cache \
-    TRANSFORMERS_CACHE=/app/cache \
     PORT=8000 \
     HOST=0.0.0.0
 
