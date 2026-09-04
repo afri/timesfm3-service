@@ -179,14 +179,47 @@ class TimesFMModelManager:
             input_list = [np.asarray(series, dtype=np.float32)]
 
         # Run forecast based on backend
-        if self.backend == "timesfm3":
-            res = self.model.forecast(input_list, horizon=horizon)
-            if isinstance(res, tuple):
-                point_arr = res[0]
-                q_arr = res[1] if len(res) > 1 else None
-            else:
-                point_arr = res
-                q_arr = None
+        if self.backend == "timesfm3" or hasattr(self.model, "predict_batch"):
+            return_q = quantiles is not None
+            results = list(
+                self.model.predict_batch(
+                    contexts=input_list,
+                    horizon=horizon,
+                    return_quantiles=return_q,
+                )
+            )
+
+            model_q_levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+            target_q = quantiles or model_q_levels
+
+            point_batch = []
+            quantiles_batch = []
+
+            for out in results:
+                f_arr = out.forecast
+                point_batch.append(f_arr.tolist() if hasattr(f_arr, "tolist") else f_arr)
+
+                if return_q and out.quantiles is not None:
+                    q_arr = out.quantiles
+                    series_q = {}
+                    for q in target_q:
+                        closest_idx = int(np.argmin([abs(q - mq) for mq in model_q_levels]))
+                        q_key = f"q{int(round(q * 100))}"
+                        if q_arr.ndim == 2:
+                            series_q[q_key] = q_arr[:, closest_idx].tolist()
+                        elif q_arr.ndim == 3:
+                            series_q[q_key] = q_arr[..., closest_idx].tolist()
+                        else:
+                            series_q[q_key] = q_arr.tolist()
+                    quantiles_batch.append(series_q)
+
+            final_point = point_batch[0] if is_single else point_batch
+            final_q = None
+            if return_q and len(quantiles_batch) > 0:
+                final_q = quantiles_batch[0] if is_single else {"batch": quantiles_batch}
+
+            return final_point, final_q
+
         elif hasattr(self.model, "forecast"):
             # TimesFM 2.5 or standard API
             try:
@@ -194,7 +227,7 @@ class TimesFMModelManager:
             except TypeError:
                 point_arr, q_arr = self.model.forecast(input_list, horizon=horizon)
         else:
-            raise RuntimeError("Model does not expose a callable forecast method")
+            raise RuntimeError("Model does not expose a callable predict_batch or forecast method")
 
         # Convert outputs to Python native structures
         if hasattr(point_arr, "tolist"):
