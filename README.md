@@ -74,8 +74,9 @@ docker compose up -d --build
 ## 📖 API Documentation
 
 Once the container is running, open your browser to view the interactive documentation:
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Interactive Documentation (Scalar)**: [http://localhost:8000/docs](http://localhost:8000/docs)
 - **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **OpenAPI Spec (JSON)**: [http://localhost:8000/openapi.json](http://localhost:8000/openapi.json)
 
 ### Key Endpoints
 
@@ -86,7 +87,6 @@ Once the container is running, open your browser to view the interactive documen
 | `GET` | `/v1/models` | List available models (OpenAI-compatible collection format) |
 | `GET` | `/v1/models/{id}` | Retrieve specific model metadata by ID |
 | `POST` | `/v1/forecast` | Generate forecasts for univariate/multivariate series |
-| `POST` | `/forecast` | Alias for `/v1/forecast` |
 
 ---
 

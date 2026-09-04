@@ -10,6 +10,27 @@ settings.MOCK_MODE = True
 client = TestClient(app)
 
 
+def test_docs_endpoint():
+    response = client.get("/docs")
+    assert response.status_code == 200
+    assert "scalar" in response.text.lower()
+
+
+def test_openapi_json_endpoint():
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    data = response.json()
+    assert "openapi" in data
+    assert "paths" in data
+    assert "/v1/forecast" in data["paths"]
+
+
+def test_root_redirect_to_docs():
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/docs"
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -97,10 +118,14 @@ def test_forecast_default_horizon():
     payload = {
         "series": [10.0, 20.0, 30.0, 40.0, 50.0],
     }
-    response = client.post("/forecast", json=payload)
+    response = client.post("/v1/forecast", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert len(data["point_forecast"]) == settings.DEFAULT_HORIZON
+
+    # Verify unversioned /forecast is no longer routed
+    unversioned_resp = client.post("/forecast", json=payload)
+    assert unversioned_resp.status_code == 404
 
 
 def test_forecast_empty_series_validation():
