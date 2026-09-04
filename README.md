@@ -82,7 +82,9 @@ Once the container is running, open your browser to view the interactive documen
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Service liveness/readiness, model load status, device |
-| `GET` | `/v1/info` | Active model ID, context/horizon limits, backend info |
+| `GET` | `/v1/info` | Service configuration limits, active backend, and runtime metadata |
+| `GET` | `/v1/models` | List available models (OpenAI-compatible collection format) |
+| `GET` | `/v1/models/{id}` | Retrieve specific model metadata by ID |
 | `POST` | `/v1/forecast` | Generate forecasts for univariate/multivariate series |
 | `POST` | `/forecast` | Alias for `/v1/forecast` |
 

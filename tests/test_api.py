@@ -36,6 +36,30 @@ def test_info_endpoint():
     assert data["mock_mode"] is True
 
 
+def test_models_list_endpoint():
+    response = client.get("/v1/models")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["object"] == "list"
+    assert isinstance(data["data"], list)
+    assert len(data["data"]) >= 1
+    assert data["data"][0]["id"] == settings.MODEL_ID
+    assert data["data"][0]["object"] == "model"
+
+
+def test_models_retrieve_endpoint():
+    response = client.get(f"/v1/models/{settings.MODEL_ID}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == settings.MODEL_ID
+    assert data["object"] == "model"
+
+    # Test 404 for unknown model
+    response_404 = client.get("/v1/models/non-existent-model")
+    assert response_404.status_code == 404
+
+
+
 def test_forecast_univariate_single_series():
     payload = {
         "series": [10.0, 11.0, 12.5, 13.0, 14.2, 15.0, 16.5, 17.0],

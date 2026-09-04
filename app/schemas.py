@@ -83,3 +83,23 @@ class ModelInfoResponse(BaseModel):
     normalize_inputs: bool
     mock_mode: bool
     version: str
+
+
+class ModelCard(BaseModel):
+    """Individual model descriptor (OpenAI compatible)."""
+
+    id: str = Field(..., description="Unique model identifier.")
+    object: str = Field(default="model", description="The object type, always 'model'.")
+    created: int = Field(default=1700000000, description="Unix timestamp of model creation.")
+    owned_by: str = Field(default="google", description="Organization or entity that owns the model.")
+    max_context: Optional[int] = Field(default=None, description="Maximum input context window length.")
+    max_horizon: Optional[int] = Field(default=None, description="Maximum forecasting horizon steps.")
+    backend: Optional[str] = Field(default=None, description="Active compute backend.")
+
+
+class ModelListResponse(BaseModel):
+    """List of available models (OpenAI compatible)."""
+
+    object: str = Field(default="list", description="The object type, always 'list'.")
+    data: List[ModelCard] = Field(..., description="Array of model objects.")
+
