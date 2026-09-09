@@ -25,6 +25,5 @@ def get_health() -> HealthResponse:
         model_loaded=is_loaded,
         model_id=settings.MODEL_ID,
         device=model_manager.device,
-        mock_mode=model_manager.mock_mode or (model_manager.backend == "mock"),
         version=settings.APP_VERSION,
     )

@@ -45,14 +45,7 @@ docker run -d --name timesfm3-service \
 ```
 *Note: On first startup, the container will download the model weights from Hugging Face (`google/timesfm-3.0-pytorch`) into the persistent volume.*
 
-#### Option B: Mock Mode (Instant Startup for Testing/CI)
-```bash
-make run-mock
-# or with docker:
-docker run -d --name timesfm3-service -p 8000:8000 -e MOCK_MODE=true timesfm3-service
-```
-
-#### Option C: GPU Accelerated (NVIDIA CUDA)
+#### Option B: GPU Accelerated (NVIDIA CUDA)
 ```bash
 make run-gpu
 # or with docker:
@@ -92,14 +85,14 @@ Once the container is running, open your browser to view the interactive documen
 
 ## 💡 Usage Examples
 
-### 1. Single Univariate Series
+### 1. Single Univariate Series (with Quantiles)
 ```bash
 curl -X POST "http://localhost:8000/v1/forecast" \
   -H "Content-Type: application/json" \
   -d '{
     "series": [10.5, 11.2, 12.0, 11.8, 12.5, 13.1, 13.0, 13.8, 14.2, 14.9],
     "horizon": 5,
-    "quantiles": [0.1, 0.5, 0.9]
+    "return_quantiles": true
   }'
 ```
 
@@ -107,18 +100,21 @@ curl -X POST "http://localhost:8000/v1/forecast" \
 ```json
 {
   "point_forecast": [15.25, 15.68, 16.02, 16.45, 16.89],
-  "quantiles": {
-    "q10": [14.05, 14.42, 14.71, 15.08, 15.48],
-    "q50": [15.25, 15.68, 16.02, 16.45, 16.89],
-    "q90": [16.45, 16.94, 17.33, 17.82, 18.30]
-  },
+  "quantiles": [
+    [14.05, 14.35, 14.65, 14.95, 15.25, 15.55, 15.85, 16.15, 16.45],
+    [14.42, 14.73, 15.05, 15.36, 15.68, 15.99, 16.31, 16.62, 16.94],
+    [14.71, 15.04, 15.37, 15.69, 16.02, 16.35, 16.67, 17.00, 17.33],
+    [15.08, 15.42, 15.77, 16.11, 16.45, 16.79, 17.13, 17.48, 17.82],
+    [15.48, 15.83, 16.18, 16.54, 16.89, 17.24, 17.60, 17.95, 18.30]
+  ],
   "horizon": 5,
   "model_id": "google/timesfm-3.0-pytorch",
   "inference_time_ms": 24.31
 }
 ```
+*Note: `quantiles` outputs the 9 model deciles `[0.1, 0.2, ..., 0.9]` per time step.*
 
-### 2. Batch Forecasting (Multiple Series)
+### 2. Batch Forecasting (Multiple Series & Covariates)
 ```bash
 curl -X POST "http://localhost:8000/v1/forecast" \
   -H "Content-Type: application/json" \
@@ -127,7 +123,9 @@ curl -X POST "http://localhost:8000/v1/forecast" \
       [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
       [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0]
     ],
-    "horizon": 3
+    "horizon": 3,
+    "return_quantiles": false,
+    "use_symmetric_averaging": true
   }'
 ```
 
@@ -147,7 +145,6 @@ Configure the service via environment variables in `docker run -e KEY=VALUE` or 
 |---|---|---|
 | `MODEL_ID` | `google/timesfm-3.0-pytorch` | Hugging Face repo ID or path to checkpoint |
 | `DEVICE` | `auto` | Device target: `auto`, `cpu`, `cuda`, or `mps` |
-| `MOCK_MODE` | `false` | When `true`, uses lightweight synthetic inference for testing |
 | `LAZY_LOAD` | `false` | When `true`, postpones model loading until first request |
 | `MAX_CONTEXT` | `1024` | Maximum historical context length |
 | `MAX_HORIZON` | `512` | Maximum allowable forecasting horizon |
@@ -166,7 +163,7 @@ make test
 ```
 Or directly:
 ```bash
-docker run --rm -e MOCK_MODE=true timesfm3-service pytest -v tests/
+docker run --rm timesfm3-service pytest -v tests/
 ```
 
 ---
@@ -177,7 +174,6 @@ docker run --rm -e MOCK_MODE=true timesfm3-service pytest -v tests/
 |---|---|
 | `make build` | Build the container image |
 | `make run` | Start container with persistent cache volume |
-| `make run-mock` | Start container instantly in mock mode |
 | `make run-gpu` | Start container with GPU support |
 | `make test` | Run pytest suite in container |
 | `make stop` | Stop container |

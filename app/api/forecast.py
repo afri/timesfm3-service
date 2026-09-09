@@ -25,9 +25,10 @@ def forecast(request: ForecastRequest) -> ForecastResponse:
         point, quantiles, elapsed_ms = model_manager.forecast(
             series=request.series,
             horizon=target_horizon,
-            quantiles=request.quantiles,
-            past_covariates=request.past_covariates,
-            future_covariates=request.future_covariates,
+            return_quantiles=request.return_quantiles,
+            use_symmetric_averaging=request.use_symmetric_averaging,
+            past_only_covariates=request.past_only_covariates,
+            past_future_covariates=request.past_future_covariates,
         )
 
         return ForecastResponse(
@@ -37,8 +38,14 @@ def forecast(request: ForecastRequest) -> ForecastResponse:
             model_id=settings.MODEL_ID,
             inference_time_ms=round(elapsed_ms, 2),
         )
+    except (ValueError, TypeError) as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid forecast request: {str(e)}",
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Forecasting failed: {str(e)}",
         )
+

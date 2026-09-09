@@ -11,7 +11,6 @@ services:
       - MODEL_ID=google/timesfm-3.0-pytorch
       - DEVICE=auto
       - LAZY_LOAD=false
-      - MOCK_MODE=false
       - HF_HOME=/app/cache
     volumes:
       - hf_cache:/app/cache

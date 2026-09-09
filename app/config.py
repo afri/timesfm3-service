@@ -26,7 +26,6 @@ class Settings(BaseSettings):
 
     # Loading configuration
     LAZY_LOAD: bool = False
-    MOCK_MODE: bool = False  # Enable for testing without HF model download
     HF_HOME: Optional[str] = os.environ.get("HF_HOME", "/app/cache")
 
     # Server configuration

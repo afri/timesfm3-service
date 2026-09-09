@@ -14,12 +14,12 @@ curl -s -X POST "${BASE_URL}/v1/forecast" \
   -d '{
     "series": [10.5, 11.2, 12.0, 11.8, 12.5, 13.1, 13.0, 13.8, 14.2, 14.9],
     "horizon": 5,
-    "quantiles": [0.1, 0.5, 0.9]
+    "return_quantiles": true
   }' | jq . || curl -s -X POST "${BASE_URL}/v1/forecast" \
   -H "Content-Type: application/json" \
   -d '{
     "series": [10.5, 11.2, 12.0, 11.8, 12.5, 13.1, 13.0, 13.8, 14.2, 14.9],
     "horizon": 5,
-    "quantiles": [0.1, 0.5, 0.9]
+    "return_quantiles": true
   }'
 echo -e "\n"

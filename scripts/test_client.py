@@ -16,7 +16,7 @@ def test_forecast():
             [10.0, 9.5, 9.0, 8.2, 7.5, 7.0, 6.4],
         ],
         "horizon": 6,
-        "quantiles": [0.1, 0.5, 0.9],
+        "return_quantiles": True,
     }
 
     req = urllib.request.Request(

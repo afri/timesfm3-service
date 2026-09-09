@@ -32,7 +32,6 @@ def get_model_info() -> ModelInfoResponse:
         max_horizon=settings.MAX_HORIZON,
         default_horizon=settings.DEFAULT_HORIZON,
         normalize_inputs=settings.NORMALIZE_INPUTS,
-        mock_mode=model_manager.mock_mode or (model_manager.backend == "mock"),
         version=settings.APP_VERSION,
     )
 

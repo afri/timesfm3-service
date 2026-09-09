@@ -29,11 +29,10 @@ class TimesFMModelManager:
         self.model = None
         self.model_id = settings.MODEL_ID
         self.device = self._resolve_device(settings.DEVICE)
-        self.mock_mode = settings.MOCK_MODE
         self.backend = "unknown"
         self._infer_lock = threading.Lock()
         self._initialized = True
-        logger.info(f"TimesFMModelManager initialized (device={self.device}, mock={self.mock_mode})")
+        logger.info(f"TimesFMModelManager initialized (device={self.device})")
 
     def _resolve_device(self, preferred_device: str) -> str:
         if preferred_device.lower() != "auto":
@@ -51,15 +50,10 @@ class TimesFMModelManager:
 
     @property
     def is_loaded(self) -> bool:
-        return (self.model is not None) or self.mock_mode
+        return self.model is not None
 
     def load_model(self) -> None:
         """Loads the TimesFM model from checkpoint or Hugging Face Hub."""
-        if self.mock_mode:
-            logger.info("Running in MOCK_MODE: Skipping heavy model weights download.")
-            self.backend = "mock"
-            return
-
         with self._infer_lock:
             if self.model is not None:
                 return
@@ -125,46 +119,89 @@ class TimesFMModelManager:
         self,
         series: Union[List[float], List[List[float]], List[List[List[float]]]],
         horizon: Optional[int] = None,
-        quantiles: Optional[List[float]] = None,
-        past_covariates: Optional[Dict[str, Any]] = None,
-        future_covariates: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[Any, Optional[Dict[str, Any]], float]:
-        """Runs forecasting on input series. Returns (point_forecast, quantiles_dict, elapsed_ms)."""
+        return_quantiles: bool = False,
+        use_symmetric_averaging: bool = False,
+        past_only_covariates: Optional[Any] = None,
+        past_future_covariates: Optional[Any] = None,
+    ) -> Tuple[Any, Optional[Any], float]:
+        """Runs forecasting on input series. Returns (point_forecast, quantiles_data, elapsed_ms)."""
         if not self.is_loaded:
             self.load_model()
 
         h = horizon or settings.DEFAULT_HORIZON
         t0 = time.time()
 
-        # Handle Mock Mode
-        if self.mock_mode or self.backend == "mock":
-            point, q_dict = self._mock_forecast(series, h, quantiles)
-            elapsed_ms = (time.time() - t0) * 1000.0
-            return point, q_dict, elapsed_ms
-
         with self._infer_lock:
             try:
                 point_res, quantiles_res = self._run_model_inference(
                     series=series,
                     horizon=h,
-                    quantiles=quantiles,
-                    past_covariates=past_covariates,
-                    future_covariates=future_covariates,
+                    return_quantiles=return_quantiles,
+                    use_symmetric_averaging=use_symmetric_averaging,
+                    past_only_covariates=past_only_covariates,
+                    past_future_covariates=past_future_covariates,
                 )
                 elapsed_ms = (time.time() - t0) * 1000.0
                 return point_res, quantiles_res, elapsed_ms
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Invalid forecasting input: {e}")
+                raise
             except Exception as e:
                 logger.error(f"Inference error: {e}", exc_info=True)
                 raise RuntimeError(f"Model forecasting failed: {e}")
+
+    def _prepare_covariates(
+        self,
+        covariates: Optional[Any],
+        is_single: bool,
+    ) -> Optional[List[np.ndarray]]:
+        if covariates is None:
+            return None
+
+        # Check for empty structures: [], [[]], etc.
+        if isinstance(covariates, (list, tuple, np.ndarray)):
+            if len(covariates) == 0:
+                return None
+            if len(covariates) == 1 and isinstance(covariates[0], (list, tuple, np.ndarray)) and len(covariates[0]) == 0:
+                return None
+
+        if is_single:
+            arr = np.asarray(covariates, dtype=np.float32)
+            if arr.size == 0:
+                return None
+            if arr.ndim == 1:
+                arr = arr[np.newaxis, :]
+            elif arr.ndim != 2:
+                raise ValueError(
+                    f"Covariates for a single series must be 1D or 2D (num_channels, time), got {arr.ndim}D shape {arr.shape}."
+                )
+            return [arr]
+        else:
+            if not isinstance(covariates, (list, tuple, np.ndarray)):
+                raise ValueError("Covariates for batch forecasting must be a list with one entry per series.")
+            cov_list = []
+            for c in covariates:
+                arr = np.asarray(c, dtype=np.float32)
+                if arr.size == 0:
+                    raise ValueError("Covariates entries cannot be empty.")
+                if arr.ndim == 1:
+                    arr = arr[np.newaxis, :]
+                elif arr.ndim != 2:
+                    raise ValueError(
+                        f"Covariates per series must be 1D or 2D (num_channels, time), got {arr.ndim}D shape {arr.shape}."
+                    )
+                cov_list.append(arr)
+            return cov_list
 
     def _run_model_inference(
         self,
         series: Any,
         horizon: int,
-        quantiles: Optional[List[float]],
-        past_covariates: Optional[Dict[str, Any]],
-        future_covariates: Optional[Dict[str, Any]],
-    ) -> Tuple[Any, Optional[Dict[str, Any]]]:
+        return_quantiles: bool = False,
+        use_symmetric_averaging: bool = False,
+        past_only_covariates: Optional[Any] = None,
+        past_future_covariates: Optional[Any] = None,
+    ) -> Tuple[Any, Optional[Any]]:
         # Normalize input to numpy batch
         is_single = False
         if isinstance(series, list) and len(series) > 0 and isinstance(series[0], (int, float)):
@@ -175,19 +212,51 @@ class TimesFMModelManager:
         else:
             input_list = [np.asarray(series, dtype=np.float32)]
 
+        # Prepare and validate covariates
+        past_only_list = self._prepare_covariates(past_only_covariates, is_single)
+        past_future_list = self._prepare_covariates(past_future_covariates, is_single)
+
+        if past_only_list is not None:
+            if len(past_only_list) != len(input_list):
+                raise ValueError(
+                    f"Number of past_only_covariates ({len(past_only_list)}) does not match number of series ({len(input_list)})."
+                )
+            for idx, (s_arr, c_arr) in enumerate(zip(input_list, past_only_list)):
+                s_len = s_arr.shape[-1]
+                c_len = c_arr.shape[-1]
+                if c_len != s_len:
+                    raise ValueError(
+                        f"past_only_covariates length ({c_len}) for series index {idx} does not match context length ({s_len})."
+                    )
+
+        if past_future_list is not None:
+            if len(past_future_list) != len(input_list):
+                raise ValueError(
+                    f"Number of past_future_covariates ({len(past_future_list)}) does not match number of series ({len(input_list)})."
+                )
+            for idx, (s_arr, c_arr) in enumerate(zip(input_list, past_future_list)):
+                s_len = s_arr.shape[-1]
+                c_len = c_arr.shape[-1]
+                expected_len = s_len + horizon
+                if c_len != expected_len:
+                    raise ValueError(
+                        f"past_future_covariates length ({c_len}) for series index {idx} does not match expected length context_len + horizon ({s_len} + {horizon} = {expected_len}). TimesFM 3 requires past_future_covariates to cover both past context and future horizon."
+                    )
+
         # Run forecast based on backend
         if self.backend == "timesfm3" or hasattr(self.model, "predict_batch"):
-            return_q = quantiles is not None
-            results = list(
-                self.model.predict_batch(
-                    contexts=input_list,
-                    horizon=horizon,
-                    return_quantiles=return_q,
-                )
-            )
+            predict_kwargs: Dict[str, Any] = {
+                "contexts": input_list,
+                "horizon": horizon,
+                "return_quantiles": return_quantiles,
+                "use_symmetric_averaging": use_symmetric_averaging,
+            }
+            if past_only_list is not None:
+                predict_kwargs["past_only_covariates"] = past_only_list
+            if past_future_list is not None:
+                predict_kwargs["past_future_covariates"] = past_future_list
 
-            model_q_levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-            target_q = quantiles or model_q_levels
+            results = list(self.model.predict_batch(**predict_kwargs))
 
             point_batch = []
             quantiles_batch = []
@@ -196,24 +265,14 @@ class TimesFMModelManager:
                 f_arr = out.forecast
                 point_batch.append(f_arr.tolist() if hasattr(f_arr, "tolist") else f_arr)
 
-                if return_q and out.quantiles is not None:
+                if return_quantiles and out.quantiles is not None:
                     q_arr = out.quantiles
-                    series_q = {}
-                    for q in target_q:
-                        closest_idx = int(np.argmin([abs(q - mq) for mq in model_q_levels]))
-                        q_key = f"q{int(round(q * 100))}"
-                        if q_arr.ndim == 2:
-                            series_q[q_key] = q_arr[:, closest_idx].tolist()
-                        elif q_arr.ndim == 3:
-                            series_q[q_key] = q_arr[..., closest_idx].tolist()
-                        else:
-                            series_q[q_key] = q_arr.tolist()
-                    quantiles_batch.append(series_q)
+                    quantiles_batch.append(q_arr.tolist() if hasattr(q_arr, "tolist") else q_arr)
 
             final_point = point_batch[0] if is_single else point_batch
             final_q = None
-            if return_q and len(quantiles_batch) > 0:
-                final_q = quantiles_batch[0] if is_single else {"batch": quantiles_batch}
+            if return_quantiles and len(quantiles_batch) > 0:
+                final_q = quantiles_batch[0] if is_single else quantiles_batch
 
             return final_point, final_q
 
@@ -223,76 +282,26 @@ class TimesFMModelManager:
                 point_arr, q_arr = self.model.forecast(inputs=input_list, horizon=horizon)
             except TypeError:
                 point_arr, q_arr = self.model.forecast(input_list, horizon=horizon)
+
+            if hasattr(point_arr, "tolist"):
+                point_list = point_arr.tolist()
+            else:
+                point_list = point_arr
+
+            if is_single and isinstance(point_list, list) and len(point_list) == 1:
+                point_list = point_list[0]
+
+            final_q = None
+            if return_quantiles and q_arr is not None:
+                final_q = q_arr.tolist() if hasattr(q_arr, "tolist") else q_arr
+                if is_single and isinstance(final_q, list) and len(final_q) == 1:
+                    final_q = final_q[0]
+
+            return point_list, final_q
         else:
             raise RuntimeError("Model does not expose a callable predict_batch or forecast method")
-
-        # Convert outputs to Python native structures
-        if hasattr(point_arr, "tolist"):
-            point_list = point_arr.tolist()
-        else:
-            point_list = point_arr
-
-        if is_single and isinstance(point_list, list) and len(point_list) == 1:
-            point_list = point_list[0]
-
-        q_dict = None
-        if q_arr is not None:
-            if hasattr(q_arr, "tolist"):
-                q_data = q_arr.tolist()
-            else:
-                q_data = q_arr
-            if is_single and isinstance(q_data, list) and len(q_data) == 1:
-                q_data = q_data[0]
-            q_dict = {"quantiles": q_data}
-
-        return point_list, q_dict
-
-    def _mock_forecast(
-        self,
-        series: Any,
-        horizon: int,
-        quantiles: Optional[List[float]],
-    ) -> Tuple[Any, Optional[Dict[str, Any]]]:
-        """Synthetic forecasting generator for testing and demonstration."""
-        is_single = False
-        if isinstance(series, list) and len(series) > 0 and isinstance(series[0], (int, float)):
-            batch = [series]
-            is_single = True
-        elif isinstance(series, list) and len(series) > 0 and isinstance(series[0], list):
-            batch = series
-        else:
-            batch = [[float(x) for x in series]]
-
-        point_batch = []
-        quantiles_batch = []
-
-        target_quantiles = quantiles or [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-
-        for s in batch:
-            last_val = float(s[-1]) if len(s) > 0 else 0.0
-            prev_val = float(s[-2]) if len(s) > 1 else last_val
-            trend = (last_val - prev_val) * 0.5
-
-            preds = []
-            cur = last_val
-            for step in range(horizon):
-                cur += trend + 0.1 * np.sin(step)
-                preds.append(round(cur, 4))
-            point_batch.append(preds)
-
-            # Generate synthetic quantiles
-            series_q = {}
-            for q in target_quantiles:
-                factor = (q - 0.5) * 2.0  # -1.0 to 1.0
-                q_vals = [round(p + factor * (0.05 * abs(p) + 0.5), 4) for p in preds]
-                series_q[f"q{int(q*100)}"] = q_vals
-            quantiles_batch.append(series_q)
-
-        final_point = point_batch[0] if is_single else point_batch
-        final_q = quantiles_batch[0] if is_single else {"batch": quantiles_batch}
-
-        return final_point, final_q
 
 
 # Global model manager accessor
 model_manager = TimesFMModelManager()
+

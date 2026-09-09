@@ -11,7 +11,6 @@ help:
 	@echo "Docker commands (minimum host prerequisites: git, docker):"
 	@echo "  make build          Build the Docker container image"
 	@echo "  make run            Run the Docker container in the background"
-	@echo "  make run-mock       Run in MOCK_MODE (instant startup, no heavy model download)"
 	@echo "  make test           Run test suite inside the Docker container"
 	@echo "  make stop           Stop the running Docker container"
 	@echo "  make logs           View live logs from the container"
@@ -30,13 +29,6 @@ run:
 		-e HF_HOME=/app/cache \
 		$(IMAGE_NAME):$(TAG)
 	@echo "Service started at http://localhost:$(PORT) (docs at http://localhost:$(PORT)/docs)"
-
-run-mock:
-	docker run -d --name $(CONTAINER_NAME) \
-		-p $(PORT):8000 \
-		-e MOCK_MODE=true \
-		$(IMAGE_NAME):$(TAG)
-	@echo "Service started in MOCK_MODE at http://localhost:$(PORT)"
 
 run-gpu:
 	docker run -d --name $(CONTAINER_NAME) \
@@ -59,7 +51,6 @@ logs:
 
 test:
 	docker run --rm \
-		-e MOCK_MODE=true \
 		$(IMAGE_NAME):$(TAG) \
 		pytest -v tests/
 
